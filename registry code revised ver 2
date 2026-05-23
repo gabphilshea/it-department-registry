@@ -1,0 +1,238 @@
+/*
+	Program Title: The IT Department's Registry
+	Program Description: 
+		A C-based program that manages database of IT students' academic records for 
+		easy monitoring, accessing, and reviewing of students. Developed using Arrays, Structs, Pointer Arithmetic,
+		and File I/O.
+	Program Version by: Jalmasco, Vince Gabriel
+						Shea, Gabriel Philip
+						Villanueva, Mart Rheymor
+						Zamudio, James Cedrick
+*/
+
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+
+//Function declarations
+void addStudent();
+void viewStudent();
+void updateRecord();
+void sortbyGWA();
+void savetoFile();
+void loadfromFile();
+
+
+typedef struct Student {
+    char name[50];           // name of the student
+    char block[50];          // student's assigned block
+    int year_level[1];        // student's year level
+    int id;                  // student ID
+    char contact_number[11];  // contact number 
+    float gwa;               // general weighted average 
+    char email[100];         // email address 
+} Record;                    
+	
+	//Global variables
+	Record student_list[100];
+	int student_count = 0;
+
+//Main function	
+
+int main (){
+	
+	loadfromFile();
+	
+	system("color 1F");
+	
+	printf("\n");
+	printf("%45s\n", "Bicol University College of Science");
+	printf("%35s\n", "Legazpi City, Albay");
+	printf("%50s\n","Department of Information Technology Registry");
+	printf("%35s\n", "===================================================================");
+	printf("\n\n%35s\n","STUDENT DATABASE");
+	int choose_option;
+	do {
+		
+		printf("\n1. Add Student\n");
+		printf("2. View Student\n");
+		printf("3. Update Record\n");
+		printf("4. Sort by GPA\n");
+		printf("5. Exit\n\n");
+		
+		printf("Choose option: ");
+		scanf("%d", &choose_option);
+		
+		
+		
+		switch(choose_option) {
+			
+			case 1:
+				addStudent();
+				break;
+			case 2:
+				viewStudent();
+				break;
+			
+			case 3:
+				updateRecord();
+				break;
+		
+			case 4:
+				sortbyGWA();
+				break;
+			
+			case 5:
+				printf("You have exited.\n");
+				break;
+			default: 
+				printf("Invalid choice.\n");
+		}
+		
+	} while (choose_option != 5);
+	
+	
+	
+}
+
+//Function for adding student in the records
+void addStudent(){
+	
+	printf("\nEnter name: ");
+	scanf(" %[^\n]", &student_list[student_count].name);
+	printf("Enter ID: ");
+	scanf(" %d", &student_list[student_count].id);
+	printf("Enter General Weighted Average (GWA): ");
+	scanf(" %f", &student_list[student_count].gwa);
+	printf("Enter Block: ");
+	scanf(" %s", &student_list[student_count].block);
+	printf("Enter Year Level: ");
+	scanf(" %d", &student_list[student_count].year_level);
+	printf("Enter Contact Number: ");
+	scanf(" %s", &student_list[student_count].contact_number);
+	printf("Enter Email: ");
+	scanf(" %s", &student_list[student_count].email);
+	
+	printf("\n");
+	
+	student_count++;
+	savetoFile();
+}
+
+//Function for viewing student in the records
+void viewStudent(){
+	
+		if (student_count) {
+			printf("\n");
+			printf("-------STUDENT RECORDS-------\n");
+			printf("%-20s %-10s %-10s %-15s %-15s %-15s %-19s", "Name", "ID", "GWA", "Year Level", "Block", "Contact Number", "Email" );	
+		}
+		
+		for (int i = 0; i < student_count; i++){
+			printf("\n%-20s %-10d %-10.1f %-15d %-15s %-15s %-19s\n", student_list[i].name, student_list[i].id, student_list[i].gwa, student_list[i].year_level, student_list[i].block, student_list[i].contact_number, student_list[i].email);
+		}
+	
+	if (student_count == 0) 
+		printf("No student in database.\n");
+	
+}
+void updateRecord(){
+	
+	int locate_id;
+	if (student_count != 0){
+		printf("\n-------UPDATE GWA-------\n");
+		printf("\nInput student's ID:  ");
+		scanf("%d", &locate_id);
+	}
+		
+	if (student_count){
+		for (int i = 0; i < student_count; i++){
+		
+		if (locate_id == student_list[i].id){
+			
+			float *ptr_gwa = &student_list[i].gwa;
+			char *ptr_name = student_list[i].name;
+			printf("%s", ptr_name);
+			printf("\nCurrent GWA: %.1f\n", *ptr_gwa);
+
+			printf("Enter new GWA: ");
+			scanf("%f", ptr_gwa);
+			
+		} 
+	
+	}
+		printf("Student with inputted ID does not exist.");
+	
+	}
+	
+	if (student_count == 0) 
+		printf("No student in database.\n");
+	
+	savetoFile();
+	return;
+}
+
+void sortbyGWA(){
+	
+	if (student_count){
+		
+		for (int i = 0; i < student_count - 1; i++){
+			for (int j = 0; j < student_count - i - 1; j++){
+				
+				Record *a = &student_list[j];
+				Record *b =  &student_list[j+1];
+				
+				if (a-> gwa > b-> gwa){
+					Record temp = *a;
+					*a = *b;
+					*b = temp;	
+				}	
+		}
+	
+	}
+	
+	printf("\n-------SORT BY GWA-------\n");
+	printf("Students sorted by GWA.\n");
+		
+	for (int i = 0; i < student_count; i++)
+		printf("\n%-25s %-10d %-10.1f\n", student_list[i].name, student_list[i].id, student_list[i].gwa);
+		
+	}	
+	
+	if (student_count == 0) 
+		printf("No student in database.\n");	
+	
+}
+
+void savetoFile() {
+    FILE *fp = fopen("students.txt", "w");
+    if (fp == NULL) { printf("Error: could not open file.\n"); return; }
+
+    Record *ptr = student_list;              // pointer arithmetic
+    for (int i = 0; i < student_count; i++, ptr++) {
+        fprintf(fp, "Student ID: %d\n Student Name: %s\n Year Level: %d\n Block: %c\n Contact No.: %s\n Email Address: %s\n GWA: %.2f\n", ptr->id, ptr->name, ptr->gwa, ptr->year_level, ptr->block, ptr->contact_number, ptr->email);
+    }
+    fclose(fp);
+    
+}
+void loadfromFile() {
+    FILE *fp = fopen("students.txt", "r");
+    if (fp == NULL) return;                 
+
+    
+    while (student_count < 100 &&
+           fscanf(fp, "Student ID: %d Student Name: &49[^|] GWA: %f\n",
+                  &student_list[student_count].id,
+                   student_list[student_count].name,
+                  &student_list[student_count].gwa,
+				  &student_list[student_count].year_level,
+				  &student_list[student_count].block,
+				  student_list[student_count].contact_number,
+				  student_list[student_count].email) == 3) {
+        student_count++;
+    }
+    fclose(fp);
+    
+}
