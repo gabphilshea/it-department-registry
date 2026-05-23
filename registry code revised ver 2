@@ -27,8 +27,8 @@ void loadfromFile();
 
 typedef struct Student {
     char name[50];           // name of the student
-    char block[50];          // student's assigned block
-    int year_level[1];        // student's year level
+    char block[2];          // student's assigned block
+    int year_level;        // student's year level
     int id;                  // student ID
     char contact_number[11];  // contact number 
     float gwa;               // general weighted average 
@@ -212,7 +212,7 @@ void savetoFile() {
 
     Record *ptr = student_list;              // pointer arithmetic
     for (int i = 0; i < student_count; i++, ptr++) {
-        fprintf(fp, "Student ID: %d\n Student Name: %s\n Year Level: %d\n Block: %c\n Contact No.: %s\n Email Address: %s\n GWA: %.2f\n", ptr->id, ptr->name, ptr->gwa, ptr->year_level, ptr->block, ptr->contact_number, ptr->email);
+        fprintf(fp, "\nStudent ID: %d\nStudent Name: %s\nYear Level: %d\nBlock: %s\nContact No.: %s\nEmail Address: %s\nGWA: %.1f\n", ptr->id, ptr->name, ptr->year_level, ptr->block, ptr->contact_number, ptr->email, ptr->gwa);
     }
     fclose(fp);
     
@@ -221,16 +221,15 @@ void loadfromFile() {
     FILE *fp = fopen("students.txt", "r");
     if (fp == NULL) return;                 
 
-    
     while (student_count < 100 &&
-           fscanf(fp, "Student ID: %d Student Name: &49[^|] GWA: %f\n",
+           fscanf(fp, "\nStudent ID: %d\nStudent Name: %s\nYear Level: %d\nBlock: %s\nContact No.: %s\nEmail Address: %s\nGWA: %.1f\n",
                   &student_list[student_count].id,
                    student_list[student_count].name,
-                  &student_list[student_count].gwa,
 				  &student_list[student_count].year_level,
 				  &student_list[student_count].block,
 				  student_list[student_count].contact_number,
-				  student_list[student_count].email) == 3) {
+				  student_list[student_count].email,
+				  &student_list[student_count].gwa) == 7) {
         student_count++;
     }
     fclose(fp);
