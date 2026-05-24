@@ -1,0 +1,36 @@
+
+Student ID: 2026000
+Student Name: Gabriel Philip Shea
+Year Level: 1
+Block: A
+Contact No.: 09682448172
+Email Address: gabshea2007@gmail.com
+GWA: 1.2
+Incomplete Status: 0
+
+Student ID: 2026001
+Student Name: Mart Villanueva
+Year Level: 1
+Block: A
+Contact No.: 09682448173
+Email Address: martvillanueva@gmail.com
+GWA: 0.0
+Incomplete Status: 1
+
+Student ID: 2026002
+Student Name: James Cedrick Zamudio
+Year Level: 2
+Block: B
+Contact No.: 09682448174
+Email Address: james@gmail.com
+GWA: 1.5
+Incomplete Status: 0
+
+Student ID: 2026003
+Student Name: Vince Gabriel Jalmasco
+Year Level: 4
+Block: E
+Contact No.: 09682448175
+Email Address: vincegab@gmail.com
+GWA: 0.0
+Incomplete Status: 1
