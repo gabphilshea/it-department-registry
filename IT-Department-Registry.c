@@ -242,7 +242,7 @@ void updateRecord(){
 						}
 					} else if (update_choice == 2) {
 						if (student_list[i].is_inc) {
-							printf("  [!] Cannot update GWA — student is currently INC.\n");
+							printf("  [!] Cannot update GWA, student is currently INC.\n");
 							printf("  Change INC status first (option 1) to assign a GWA.\n");
 						} else {
 							float new_gwa;
