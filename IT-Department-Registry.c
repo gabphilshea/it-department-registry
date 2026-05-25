@@ -8,7 +8,7 @@
 		and File I/O.
 	Program Version by: Jalmasco, Vince Gabriel P. - Special features (such as incomplete GWA) and Integration of BU grading scale
 						Shea, Gabriel Philip M. - Basic code functions (prototyping) before integration of complex functions. Functions and Interface
-						Villanueva, Mart Rheymor N. - 
+						Villanueva, Mart Rheymor N. - Pointers and Basic troubleshooting
 						Zamudio, James Cedrick F. - Filehandling and Troubleshooting
 						
 	BS INFORMATION TECHNOLOGY 1A
