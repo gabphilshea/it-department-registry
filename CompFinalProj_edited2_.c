@@ -4,10 +4,10 @@
 		A C-based program that manages database of IT students' academic records for 
 		easy monitoring, accessing, and reviewing of students. Developed using Arrays, Structs, Pointer Arithmetic,
 		and File I/O.
-	Program Version by: Jalmasco, Vince Gabriel
-						Shea, Gabriel Philip
-						Villanueva, Mart Rheymor
-						Zamudio, James Cedrick
+	Program Version by: Jalmasco, Vince Gabriel P. - 
+						Shea, Gabriel Philip M. - Functions and Interface
+						Villanueva, Mart Rheymor N. - 
+						Zamudio, James Cedrick F. - Filehandling and Troubleshooting
 */
 
 #include <stdio.h>
@@ -22,6 +22,7 @@ void addStudent();
 void viewStudent();
 void updateRecord();
 void sortbyGWA();
+void clearInputBuffer();
 void savetoFile();
 void loadfromFile();
 const char* getGradeInterpretation(float gwa);
@@ -173,6 +174,7 @@ void addStudent() {
     student_count++;
     savetoFile();
     printf("[+] Student '%s' added successfully.\n", s->name);
+    clearInputBuffer();
 }
 
 void viewStudent() {
@@ -182,20 +184,25 @@ void viewStudent() {
         return;
     }
 
-    // Column headers. Widths are set to match the printf formats below
     printf("\n");
-    printf("-------STUDENT RECORDS-------\n");
-    printf("%-20s %-20s %-8s %-22s %-12s %-15s %-16s %-30s\n",
-           "Name", "ID", "GWA", "Interpretation", "Year Level", "Block", "Contact Number", "Email");
-    printf("%-20s %-20s %-8s %-22s %-12s %-15s %-16s %-30s\n",
-           "--------------------", "--------------------", "--------",
-           "----------------------", "------------", "---------------",
-           "----------------", "------------------------------");
+    printf("-------STUDENT RECORDS-------\n\n");
+
+    printf("%-30s %-20s %-6s %-20s %-6s %-8s %-16s %-35s\n",
+           "Name", "ID", "GWA", "Interpretation", "Year", "Block", "Contact", "Email");
+
+    printf("%-30s %-20s %-6s %-20s %-6s %-8s %-16s %-35s\n",
+           "------------------------------",
+           "--------------------",
+           "------",
+           "--------------------",
+           "------",
+           "--------",
+           "----------------",
+           "-----------------------------------");
 
     for (int i = 0; i < student_count; i++) {
-        // INC students get a special row since they have no valid GWA to print
         if (student_list[i].is_inc) {
-            printf("%-20s %-20s %-8s %-22s %-12d %-15s %-16s %-30s\n",
+            printf("%-30s %-20s %-6s %-20s %-6d %-8s %-16s %-35s\n",
                    student_list[i].name,
                    student_list[i].id,
                    "INC",
@@ -205,8 +212,7 @@ void viewStudent() {
                    student_list[i].contact_number,
                    student_list[i].email);
         } else {
-            // %.2f keeps the GWA display clean, e.g. 1.75 instead of 1.750000
-            printf("%-20s %-20s %-8.2f %-22s %-12d %-15s %-16s %-30s\n",
+            printf("%-30s %-20s %-6.2f %-20s %-6d %-8s %-16s %-35s\n",
                    student_list[i].name,
                    student_list[i].id,
                    student_list[i].gwa,
@@ -217,8 +223,9 @@ void viewStudent() {
                    student_list[i].email);
         }
     }
-}
 
+    printf("\n");
+}
 void updateRecord() {
 
     char locate_id[20];
@@ -298,6 +305,7 @@ void updateRecord() {
         printf("Student with ID '%s' does not exist.\n", locate_id);
 
     savetoFile();
+    clearInputBuffer();
 }
 
 void sortbyGWA() {
@@ -336,6 +344,7 @@ void sortbyGWA() {
                    student_list[i].name, student_list[i].id,
                    student_list[i].gwa, getGradeInterpretation(student_list[i].gwa));
     }
+    clearInputBuffer();
 }
 
 void savetoFile() {
@@ -375,7 +384,10 @@ void loadfromFile() {
     fclose(fp);
     printf("Records loaded: %d student(s).\n", student_count);
 }
-
+void clearInputBuffer() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+} // clears input to avoid duplicating the menu when entering a student
 // Mirrors the official BU grading scale. The ranges follow the school's actual rubric,
 // not something we made up
 const char* getGradeInterpretation(float gwa) {
