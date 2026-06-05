@@ -21,8 +21,6 @@ Main Menu:
 	       Bicol University College of Science
                 Legazpi City, Albay
      Department of Information Technology Registry
-===================================================================
-
 
                    STUDENT DATABASE
 
