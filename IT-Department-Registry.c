@@ -8,7 +8,7 @@
 		and File I/O.
 	Program Version by: Jalmasco, Vince Gabriel P. - Special features (such as incomplete GWA) and Integration of BU grading scale
 						Shea, Gabriel Philip M. - Basic code functions (prototyping) before integration of complex functions. Functions and Interface
-						Villanueva, Mart Rheymor N. - Pointers and Basic troubleshooting
+						Villanueva, Mart Rheymor N. - Pointers and Troubleshooting 
 						Zamudio, James Cedrick F. - Filehandling and Troubleshooting
 						
 	BS INFORMATION TECHNOLOGY 1A
@@ -18,43 +18,103 @@
 #include <string.h>
 #include <stdlib.h>
 
-// 100 students should be more than enough for a single block registry
-#define MAX_STUDENTS 100
+#define MAX_STUDENTS 1000
+#define DB_FILENAME  "students.txt"
 
-// Forward declarations so the compiler doesn't complain about call order
-void addStudent();
-void viewStudent();
-void updateRecord();
-void sortbyGWA();
-void clearInputBuffer();
-void savetoFile();
-void loadfromFile();
-const char* getGradeInterpretation(float gwa);
-void displayGradingScale();
+// Builds the full absolute path to the database file: $HOME/students.txt
+// Falls back to "./students.txt" if HOME is not set.
+void getDBPath(char *buf, int bufsize) {
+    const char *home = getenv("HOME");
+    if (home != NULL)
+        snprintf(buf, bufsize, "%s/%s", home, DB_FILENAME);
+    else
+        snprintf(buf, bufsize, "%s", DB_FILENAME);
+}
 
-// One struct to hold everything about a student. Keeps things tidy instead of
-// juggling a dozen separate arrays
+// Nested struct for student name, split into parts for sorting by last name
+typedef struct {
+    char firstName[75];   // supports long compound first names
+    char middleName[50];  // bumped up from 25 for safety
+    char lastName[50];    // bumped up from 25 for safety
+} Name;
+
+// Struct to hold everything about a student
 typedef struct Student {
-    char name[50];
+    Name name;
     char block[50];
-    int  year_level;
-    char id[20];             // stored as a string because IDs like "2025-01-01720" have dashes
-    char contact_number[16]; // 16 chars to be safe; PH numbers are 11 digits but formatting varies
+    char id[20];
+    char contact_number[12];
     float gwa;
-    int  is_inc;             // acts like a boolean: 1 means the student has an INC, 0 means they don't
-    char email[100];
+    int  is_inc;
+    char inc_reason[100];
+    char or_number[20];
 } Record;
 
-// Global array and counter. Every function needs access to these,
-// so keeping them global saves a lot of passing around
-Record student_list[MAX_STUDENTS];
-int student_count = 0;
+typedef struct {
+    Record student_list[MAX_STUDENTS];
+    int student_count;
+} Registry;
+
+void addStudent(Registry *reg);
+void viewStudent(Registry *reg);
+void updateRecord(Registry *reg);
+void sortMenu(Registry *reg);
+void sortbyGWA(Registry *reg);
+void sortbyID(Registry *reg);
+void savetoFile(Registry *reg);
+void loadfromFile(Registry *reg);
+void getValidName(const char *prompt, char *dest, int size, int allowEmpty);
+int isDuplicateName(Registry *reg, const char *firstName, const char *middleName, const char *lastName);
+void getValidBlock(const char *prompt, char *dest, int size);
+void getValidContact(const char *prompt, char *dest, int size);
+void fixNameCase(char *str);
+void fixUpperCase(char *str);
+char toUpperChar(char c);
+char toLowerChar(char c);
+void clearInputBuffer();
+const char* getGradeInterpretation(float gwa);
+void displayGradingScale();
+void pressEnterToContinue();
+
+
+// converts a single character to uppercase
+char toUpperChar(char c) {
+    if (c >= 'a' && c <= 'z')
+        return c - 'a' + 'A';
+    return c;
+}
+
+// converts a single character to lowercase
+char toLowerChar(char c) {
+    if (c >= 'A' && c <= 'Z')
+        return c - 'A' + 'a';
+    return c;
+}
+
+// capitalizes the first letter of each word in a string, rest lowercase
+void fixNameCase(char *str) {
+    int i = 0;
+    while (str[i] != '\0') {
+        if (i == 0 || str[i - 1] == ' ')
+            str[i] = toUpperChar(str[i]);
+        else
+            str[i] = toLowerChar(str[i]);
+        i++;
+    }
+}
+
+// converts an entire string to uppercase
+void fixUpperCase(char *str) {
+    for (int i = 0; str[i] != '\0'; i++)
+        str[i] = toUpperChar(str[i]);
+}
+
+// ---------------------------------------------------------------
 
 int main() {
-
-    loadfromFile();
-
-    system("color 1F");
+    Registry reg;
+    reg.student_count = 0;
+    loadfromFile(&reg);
 
     printf("%45s\n", "Bicol University College of Science");
     printf("%35s\n", "Legazpi City, Albay");
@@ -69,7 +129,7 @@ int main() {
         printf("\n1. Add Student\n");
         printf("2. View Student\n");
         printf("3. Update Record\n");
-        printf("4. Sort by GWA\n");
+        printf("4. Sort Records\n");
         printf("5. View Grading Scale\n");
         printf("6. Exit\n\n");
 
@@ -85,26 +145,13 @@ int main() {
         }
 
         switch (choose_option) {
-            case 1: 
-				addStudent();         
-				break;
-            case 2: 
-				viewStudent();         
-				break;
-            case 3: 
-				updateRecord();        
-				break;
-            case 4: 
-				sortbyGWA();           
-				break;
-            case 5: 
-				displayGradingScale(); 
-				break;
-            case 6: 
-				printf("You have exited.\n");
-				break;
-            default: 
-				printf("Invalid choice.\n");
+            case 1: addStudent(&reg); break;
+            case 2: viewStudent(&reg); break;
+            case 3: updateRecord(&reg); break;
+            case 4: sortMenu(&reg); break;
+            case 5: displayGradingScale(); break;
+            case 6: printf("You have exited.\n"); break;
+            default: printf("Invalid choice.\n");
         }
 
     } while (choose_option != 6);
@@ -112,248 +159,352 @@ int main() {
     return 0;
 }
 
-void addStudent() {
+// extracts the first 4 digits (year) from a student ID like "2025-01-01720"
+int getIDYear(const char *id) {
+    int year = 0;
+    sscanf(id, "%4d", &year);
+    return year;
+}
 
-    // Stop early if we've already hit the cap, better than overwriting memory
-    if (student_count >= MAX_STUDENTS) {
-        printf("[!] Student list is full. Cannot add more students.\n");
+// Adds a new student; INC is automatically flagged if GWA is 3.1 - 4.0
+void addStudent(Registry *reg) {
+    if (reg->student_count >= MAX_STUDENTS) {
+        printf("[!] Student list is full.\n");
         return;
     }
-    
 
+    Record *s = &reg->student_list[reg->student_count];
 
-    // Point directly to the next empty slot instead of copying later
-    Record *s = &student_list[student_count];
+    s->inc_reason[0] = '\0';
+    s->or_number[0]  = '\0';
 
-    // The [^\n] lets us capture full names with spaces. Just using %s would cut off at the first space
-    printf("\nEnter name: ");
-    scanf(" %49[^\n]", s->name);
+    getValidName("\nEnter first name: ", s->name.firstName, sizeof(s->name.firstName), 0);
+    getValidName("Enter middle name (press Enter to skip): ", s->name.middleName, sizeof(s->name.middleName), 1);
+    getValidName("Enter last name: ", s->name.lastName, sizeof(s->name.lastName), 0);
+	
+	if (isDuplicateName(reg, s->name.firstName, s->name.middleName, s->name.lastName)) {
 
-    // Keep asking for an ID until the user gives one that isn't already in the list
+    // find and show the existing match so the user can compare
+    for (int i = 0; i < reg->student_count; i++) {
+        Record *existing = &reg->student_list[i];
+        if (strcmp(existing->name.firstName,  s->name.firstName)  == 0 &&
+            strcmp(existing->name.middleName, s->name.middleName) == 0 &&
+            strcmp(existing->name.lastName,   s->name.lastName)   == 0) {
+
+            printf("\n  [!] A student with this name already exists:\n");
+            printf("      Name : %s %s %s\n",
+                   existing->name.firstName,
+                   existing->name.middleName,
+                   existing->name.lastName);
+            printf("      ID   : %s\n", existing->id);
+            printf("      Block: %s\n", existing->block);
+            break;
+        }
+    }
+
+    char confirm[5];
+    printf("\n  Is this a different person? (y/n): ");
+    fgets(confirm, sizeof(confirm), stdin);
+
+    if (confirm[0] != 'y' && confirm[0] != 'Y') {
+        printf("  [!] Add student cancelled.\n");
+        pressEnterToContinue();
+        return;   // abort
+    }
+    // if 'y', fall through and continue adding normally
+}
     int id_valid = 0;
     do {
-        printf("Enter ID: ");
-        scanf(" %19s", s->id);
+        printf("Enter Student ID (format: YYYY-XX-XXXXX): ");
+        fgets(s->id, sizeof(s->id), stdin);
+        s->id[strcspn(s->id, "\n")] = '\0';
 
-        int duplicate = 0;
-        for (int i = 0; i < student_count; i++) {
-            if (strcmp(student_list[i].id, s->id) == 0) {
-                printf("  [!] ID %s already exists. Enter a unique ID.\n", s->id);
-                duplicate = 1;
+        id_valid = 1;
+        for (int i = 0; i < reg->student_count; i++) {
+            if (strcmp(s->id, reg->student_list[i].id) == 0) {
+                printf("  [!] ID already exists. Please enter a unique ID.\n");
+                id_valid = 0;
                 break;
             }
         }
-        if (!duplicate) id_valid = 1;
 
+        if (strlen(s->id) < 12 || s->id[4] != '-' || s->id[7] != '-') {
+            printf("  [!] Invalid ID format. Use YYYY-XX-XXXXX.\n");
+            id_valid = 0;
+        }
     } while (!id_valid);
 
-    // Validate INC status. Only 1 or 0 are accepted, anything else loops again
-   do {
-    printf("Is this student Incomplete (INC)? (1 = Yes, 0 = No): ");
-    if (scanf(" %d", &s->is_inc) != 1) {
-        printf("  [!] Invalid input. Please enter 1 for Yes or 0 for No.\n");
-        while (getchar() != '\n'); // flush bad input
-        s->is_inc = -1;            // force loop to repeat
-    } else if (s->is_inc != 0 && s->is_inc != 1) {
-        printf("  [!] Invalid option. Please enter 1 for Yes or 0 for No.\n");
-    }
-} while (s->is_inc != 0 && s->is_inc != 1);
-
-    // INC students don't have a GWA yet, so we skip that field entirely
-    if (s->is_inc) {
-        s->gwa = 0.0f;
-        printf("  [!] GWA skipped, student marked as INC.\n");
-    } else {
-        // BU's grading scale runs from 1.00 (best) to 5.00 (failing),
-        // so anything outside that range is clearly a typo
-        do {
-            printf("Enter General Weighted Average (GWA) [1.00 - 5.00]: ");
-            scanf(" %f", &s->gwa);
-            if (s->gwa < 1.00f || s->gwa > 5.00f)
-                printf("  [!] Invalid GWA. Must be between 1.00 and 5.00.\n");
-        } while (s->gwa < 1.00f || s->gwa > 5.00f);
-    }
-
-    printf("Enter Block: ");
-    scanf(" %49s", s->block);
-
+    // GWA input — INC is automatically determined by the range
+    int valid;
     do {
-        printf("Enter Year Level (1-4): ");
-        scanf(" %d", &s->year_level);
-        if (s->year_level < 1 || s->year_level > 4)
-            printf("  [!] Invalid year level. Must be between 1 and 4.\n");
-    } while (s->year_level < 1 || s->year_level > 4);
+        char buffer[20];
+        printf("Enter General Weighted Average (GWA) [1.00 - 5.00]: ");
+        fgets(buffer, sizeof(buffer), stdin);
+        valid = sscanf(buffer, "%f", &s->gwa);
+        if (valid != 1) {
+            printf("  [!] Invalid input. Please enter a numeric value.\n");
+        } else if (s->gwa < 1.00f || s->gwa > 5.00f) {
+            printf("  [!] Invalid GWA. Must be between 1.00 and 5.00.\n");
+            valid = 0;
+        }
+    } while (valid != 1 || s->gwa < 1.00f || s->gwa > 5.00f);
 
-    printf("Enter Contact Number: ");
-    scanf(" %15s", s->contact_number);
+    // automatically flag INC if GWA falls in the conditional range
+    if (s->gwa >= 3.10f && s->gwa <= 4.00f) {
+        s->is_inc = 1;
+        printf("  [!] GWA falls under Conditional range (3.1 - 4.0). Student flagged as INC.\n");
+        printf("  Enter reason for INC: ");
+        fgets(s->inc_reason, sizeof(s->inc_reason), stdin);
+        s->inc_reason[strcspn(s->inc_reason, "\n")] = '\0';
+    } else {
+        s->is_inc = 0;
+    }
 
-    printf("Enter Email: ");
-    scanf(" %99s", s->email);
+    getValidBlock("Enter Block: ", s->block, sizeof(s->block));
+    getValidContact("Enter Contact Number (11 digits ex: 09xxxxxxxxx): ", s->contact_number, sizeof(s->contact_number));
 
+    reg->student_count++;
+    savetoFile(reg);
+    printf("[+] Student '%s %s %s' added successfully.\n",
+        s->name.firstName, s->name.middleName, s->name.lastName);
     printf("\n");
-
-    // Only increment after everything is filled in successfully
-    student_count++;
-    savetoFile();
-    printf("[+] Student '%s' added successfully.\n", s->name);
-    
-    if (student_count == 0) 
-		printf("No student in database.\n");
-    printf("\n");
-    
-    clearInputBuffer();
+    pressEnterToContinue();
 }
 
-void viewStudent() {
+// Displays all students, grouped by ID year (first 4 digits of ID)
+void viewStudent(Registry *reg) {
+    if (reg->student_count == 0) {
+        printf("No student in database.\n");
+        pressEnterToContinue();
+        return;
+    }
 
-   	if (student_count){
-   		
-   		printf("\n");
-    printf("-------STUDENT RECORDS-------\n\n");
+    printf("\n-------STUDENT RECORDS-------\n");
 
-    printf("%-30s %-20s %-6s %-20s %-6s %-8s %-16s %-35s\n",
-           "Name", "ID", "GWA", "Interpretation", "Year", "Block", "Contact", "Email");
+    // collect unique years from IDs
+    int years[MAX_STUDENTS];
+    int year_count = 0;
+    for (int i = 0; i < reg->student_count; i++) {
+        int y = getIDYear(reg->student_list[i].id);
+        int already = 0;
+        for (int j = 0; j < year_count; j++) {
+            if (years[j] == y) { already = 1; break; }
+        }
+        if (!already)
+            years[year_count++] = y;
+    }
 
-    printf("%-30s %-20s %-6s %-20s %-6s %-8s %-16s %-35s\n",
-           "------------------------------",
-           "--------------------",
-           "------",
-           "--------------------",
-           "------",
-           "--------",
-           "----------------",
-           "-----------------------------------");
+    // simple sort of the unique years ascending
+    for (int i = 0; i < year_count - 1; i++)
+        for (int j = 0; j < year_count - i - 1; j++)
+            if (years[j] > years[j + 1]) {
+                int tmp = years[j];
+                years[j] = years[j + 1];
+                years[j + 1] = tmp;
+            }
 
-    for (int i = 0; i < student_count; i++) {
-        if (student_list[i].is_inc) {
-            printf("%-30s %-20s %-6s %-20s %-6d %-8s %-16s %-35s\n",
-                   student_list[i].name,
-                   student_list[i].id,
-                   "INC",
-                   "Incomplete",
-                   student_list[i].year_level,
-                   student_list[i].block,
-                   student_list[i].contact_number,
-                   student_list[i].email);
-        } else {
-            printf("%-30s %-20s %-6.2f %-20s %-6d %-8s %-16s %-35s\n",
-                   student_list[i].name,
-                   student_list[i].id,
-                   student_list[i].gwa,
-                   getGradeInterpretation(student_list[i].gwa),
-                   student_list[i].year_level,
-                   student_list[i].block,
-                   student_list[i].contact_number,
-                   student_list[i].email);
+    for (int yi = 0; yi < year_count; yi++) {
+        int found = 0;
+        for (int i = 0; i < reg->student_count; i++) {
+            if (getIDYear(reg->student_list[i].id) == years[yi]) {
+                if (!found) {
+                    found = 1;
+                    printf("\n  [ Batch %d ]\n", years[yi]);
+                    // FIX: widened first name column to 30 chars
+                    printf("  %-30s %-20s %-20s %-20s %-6s %-22s %-8s %-16s\n",
+                           "First Name", "Middle Name", "Last Name", "ID",
+                           "GWA", "Interpretation", "Block", "Contact");
+                    printf("  %-30s %-20s %-20s %-20s %-6s %-22s %-8s %-16s\n",
+                           "------------------------------", "--------------------",
+                           "--------------------", "--------------------",
+                           "------", "----------------------", "--------", "----------------");
+                }
+
+                if (reg->student_list[i].is_inc) {
+                    printf("  %-30s %-20s %-20s %-20s %-6s %-22s %-8s %-16s\n",
+                           reg->student_list[i].name.firstName,
+                           reg->student_list[i].name.middleName,
+                           reg->student_list[i].name.lastName,
+                           reg->student_list[i].id,
+                           "INC", "Incomplete",
+                           reg->student_list[i].block,
+                           reg->student_list[i].contact_number);
+                    if (strlen(reg->student_list[i].inc_reason) > 0)
+                        printf("    Reason    : %s\n", reg->student_list[i].inc_reason);
+                    if (strlen(reg->student_list[i].or_number) > 0)
+                        printf("    OR Number : %s\n", reg->student_list[i].or_number);
+                } else {
+                    printf("  %-30s %-20s %-20s %-20s %-6.2f %-22s %-8s %-16s\n",
+                           reg->student_list[i].name.firstName,
+                           reg->student_list[i].name.middleName,
+                           reg->student_list[i].name.lastName,
+                           reg->student_list[i].id,
+                           reg->student_list[i].gwa,
+                           getGradeInterpretation(reg->student_list[i].gwa),
+                           reg->student_list[i].block,
+                           reg->student_list[i].contact_number);
+                }
+            }
         }
     }
-	   }
 
-    
-	if (student_count == 0) 
-		printf("No student in database.\n");
     printf("\n");
+    pressEnterToContinue();
 }
-void updateRecord() {
 
-	if (student_count){
-		char locate_id[20];
+// Find student by ID, then modify data
+void updateRecord(Registry *reg) {
+    if (reg->student_count == 0) {
+        printf("No student in database.\n");
+        pressEnterToContinue();
+        return;
+    }
+
+    char locate_id[20];
 
     printf("\n-------UPDATE RECORD-------\n");
     printf("\nInput student's ID: ");
     scanf(" %19s", locate_id);
+    clearInputBuffer();
 
     int found = 0;
-    for (int i = 0; i < student_count; i++) {
-        if (strcmp(locate_id, student_list[i].id) == 0) {
+    for (int i = 0; i < reg->student_count; i++) {
+        if (strcmp(locate_id, reg->student_list[i].id) == 0) {
             found = 1;
 
-            // Using pointers here to avoid retyping student_list[i] everywhere
-            float *ptr_gwa  = &student_list[i].gwa;
-            char  *ptr_name =  student_list[i].name;
-            printf("Student: %s\n", ptr_name);
+            float *ptr_gwa  = &reg->student_list[i].gwa;
+            Name  *ptr_name = &reg->student_list[i].name;
 
-            // Show current status so the user knows what they're changing
-            if (student_list[i].is_inc) {
+            printf("Student: %s %s %s\n",
+                   ptr_name->firstName, ptr_name->middleName, ptr_name->lastName);
+
+            if (reg->student_list[i].is_inc) {
                 printf("Current Status: INC (Incomplete)\n");
+                printf("Reason: %s\n", reg->student_list[i].inc_reason);
+                if (strlen(reg->student_list[i].or_number) > 0)
+                    printf("OR Number: %s\n", reg->student_list[i].or_number);
             } else {
                 printf("Current GWA: %.2f  (%s)\n", *ptr_gwa, getGradeInterpretation(*ptr_gwa));
             }
 
             int update_choice;
             printf("\nWhat would you like to update?\n");
-            printf("  1. Change INC status\n");
+            printf("  1. Clear INC status\n");
             printf("  2. Update GWA\n");
             printf("Choose: ");
             scanf("%d", &update_choice);
+            clearInputBuffer();
 
             if (update_choice == 1) {
-                printf("Mark as Incomplete? (1=Yes, 0=No): ");
-                scanf("%d", &student_list[i].is_inc);
-                if (student_list[i].is_inc) {
-                    // Wipe the GWA when marking as INC so no stale value stays behind
-                    student_list[i].gwa = 0.0f;
-                    printf("Student marked as INC.\n");
+                if (!reg->student_list[i].is_inc) {
+                    printf("  [!] Student is not currently INC.\n");
                 } else {
-                    // Clearing INC means we need to ask for a real GWA now
+                    printf("Enter OR Number for completion form: ");
+                    fgets(reg->student_list[i].or_number, sizeof(reg->student_list[i].or_number), stdin);
+                    reg->student_list[i].or_number[strcspn(reg->student_list[i].or_number, "\n")] = '\0';
+
                     float new_gwa;
                     do {
-                        printf("Enter new GWA [1.00 - 5.00]: ");
+                        printf("Enter new GWA after completion [1.00 - 3.00]: ");
                         scanf("%f", &new_gwa);
-                        if (new_gwa < 1.00f || new_gwa > 5.00f)
-                            printf("  [!] Invalid GWA. Must be between 1.00 and 5.00.\n");
-                    } while (new_gwa < 1.00f || new_gwa > 5.00f);
+                        clearInputBuffer();
+                        if (new_gwa < 1.00f || new_gwa > 3.00f)
+                            printf("  [!] Completed grade must be between 1.00 and 3.00.\n");
+                    } while (new_gwa < 1.00f || new_gwa > 3.00f);
+
                     *ptr_gwa = new_gwa;
-                    printf("INC cleared. GWA set to %.2f  (%s)\n", *ptr_gwa, getGradeInterpretation(*ptr_gwa));
+                    reg->student_list[i].is_inc = 0;
+                    printf("INC cleared. OR Number recorded. GWA set to %.2f  (%s)\n",
+                           *ptr_gwa, getGradeInterpretation(*ptr_gwa));
                 }
             } else if (update_choice == 2) {
-                // Block GWA edits if the student is still tagged as INC.
-                // The INC flag has to be cleared first or the data won't make sense
-                if (student_list[i].is_inc) {
+                if (reg->student_list[i].is_inc) {
                     printf("  [!] Cannot update GWA, student is currently INC.\n");
-                    printf("  Change INC status first (option 1) to assign a GWA.\n");
+                    printf("  Clear INC status first (option 1) to assign a new GWA.\n");
                 } else {
                     float new_gwa;
                     do {
                         printf("Enter new GWA [1.00 - 5.00]: ");
                         scanf("%f", &new_gwa);
+                        clearInputBuffer();
                         if (new_gwa < 1.00f || new_gwa > 5.00f)
                             printf("  [!] Invalid GWA. Must be between 1.00 and 5.00.\n");
                     } while (new_gwa < 1.00f || new_gwa > 5.00f);
                     *ptr_gwa = new_gwa;
-                    printf("GWA updated to %.2f  (%s)\n", *ptr_gwa, getGradeInterpretation(*ptr_gwa));
+                    printf("GWA updated to %.2f  (%s)\n",
+                           *ptr_gwa, getGradeInterpretation(*ptr_gwa));
                 }
             } else {
                 printf("Invalid choice. No changes made.\n");
             }
-            break; // no point continuing the loop once we found the student
+            break;
         }
     }
 
     if (!found)
-        printf("Student with ID '%s' does not exist.\n", locate_id);	
-	}
-	
-	if (student_count == 0)
-		printf("No student in database.\n");
-    
+        printf("Student with ID '%s' does not exist.\n", locate_id);
 
-    savetoFile();
-    clearInputBuffer();
+    savetoFile(reg);
+    pressEnterToContinue();
 }
 
-void sortbyGWA() {
+// User chooses sorting criteria
+void sortMenu(Registry *reg) {
+    if (reg->student_count == 0) {
+        printf("No student in database.\n");
+        pressEnterToContinue();
+        return;
+    }
 
-    // Bubble sort. Not the fastest, but simple and the list size is small so it's fine
-    for (int i = 0; i < student_count - 1; i++) {
-        for (int j = 0; j < student_count - i - 1; j++) {
-            Record *a = &student_list[j];
-            Record *b = &student_list[j + 1];
+    char input[10];
+    int sort_choice = 0;
 
-            // INC students always get pushed to the bottom since they have no valid GWA.
-            // Among non-INC students, lower GWA value means better standing, so sort ascending
-            if ((a->is_inc && !b->is_inc) ||
-                (!a->is_inc && !b->is_inc && a->gwa > b->gwa)) {
+    printf("\n-------SORT RECORDS-------\n");
+    printf("1. Sort by GWA\n");
+    printf("2. Sort by ID\n");
+    printf("Choose sort option: ");
+    fflush(stdout);
+
+    if (fgets(input, sizeof(input), stdin) == NULL) return;
+    if (sscanf(input, "%d", &sort_choice) != 1) {
+        printf("Invalid choice.\n");
+        return;
+    }
+
+    switch (sort_choice) {
+        case 1: sortbyGWA(reg); break;
+        case 2: sortbyID(reg); break;
+        default: printf("Invalid choice.\n");
+    }
+}
+
+// Sorts by GWA within each ID year group, INC at bottom of each group
+void sortbyGWA(Registry *reg) {
+    for (int i = 0; i < reg->student_count - 1; i++) {
+        for (int j = 0; j < reg->student_count - i - 1; j++) {
+            Record *a = &reg->student_list[j];
+            Record *b = &reg->student_list[j + 1];
+
+            int year_a = getIDYear(a->id);
+            int year_b = getIDYear(b->id);
+
+            int swap = 0;
+            if (year_a != year_b) {
+                swap = (year_a > year_b);
+            } else {
+                if (a->is_inc && !b->is_inc) {
+                    swap = 1;
+                } else if (!a->is_inc && !b->is_inc) {
+                    if (a->gwa > b->gwa)
+                        swap = 1;
+                    else if (a->gwa == b->gwa)
+                        swap = (strcmp(a->name.lastName, b->name.lastName) > 0);
+                } else if (a->is_inc && b->is_inc) {
+                    swap = (strcmp(a->name.lastName, b->name.lastName) > 0);
+                }
+            }
+
+            if (swap) {
                 Record temp = *a;
                 *a = *b;
                 *b = temp;
@@ -362,92 +513,324 @@ void sortbyGWA() {
     }
 
     printf("\n-------SORT BY GWA-------\n");
-    printf("Students sorted by GWA.\n\n");
+    printf("Students grouped by batch (ID year), sorted by GWA (INC at bottom of each group).\n\n");
 
-    // Compact view, just the grade-related columns since that's the point of this feature
-    printf("%-25s %-20s %-8s %-22s\n", "Name", "ID", "GWA", "Interpretation");
-    printf("%-25s %-20s %-8s %-22s\n",
-           "-------------------------", "--------------------", "--------", "----------------------");
+    int current_year = -1;
+    for (int i = 0; i < reg->student_count; i++) {
+        int y = getIDYear(reg->student_list[i].id);
+        if (y != current_year) {
+            current_year = y;
+            printf("\n  [ Batch %d ]\n", current_year);
+            // FIX: widened first name column to 30 chars
+            printf("  %-30s %-20s %-20s %-20s %-8s %-22s\n",
+                   "First Name", "Middle Name", "Last Name", "ID", "GWA", "Interpretation");
+            printf("  %-30s %-20s %-20s %-20s %-8s %-22s\n",
+                   "------------------------------", "--------------------",
+                   "--------------------", "--------------------",
+                   "--------", "----------------------");
+        }
 
-    for (int i = 0; i < student_count; i++) {
-        if (student_list[i].is_inc)
-            printf("%-25s %-20s %-8s %-22s\n",
-                   student_list[i].name, student_list[i].id, "INC", "Incomplete");
+        if (reg->student_list[i].is_inc)
+            printf("  %-30s %-20s %-20s %-20s %-8s %-22s\n",
+                   reg->student_list[i].name.firstName,
+                   reg->student_list[i].name.middleName,
+                   reg->student_list[i].name.lastName,
+                   reg->student_list[i].id,
+                   "INC", "Incomplete");
         else
-            printf("%-25s %-20s %-8.2f %-22s\n",
-                   student_list[i].name, student_list[i].id,
-                   student_list[i].gwa, getGradeInterpretation(student_list[i].gwa));
+            printf("  %-30s %-20s %-20s %-20s %-8.2f %-22s\n",
+                   reg->student_list[i].name.firstName,
+                   reg->student_list[i].name.middleName,
+                   reg->student_list[i].name.lastName,
+                   reg->student_list[i].id,
+                   reg->student_list[i].gwa,
+                   getGradeInterpretation(reg->student_list[i].gwa));
     }
-    clearInputBuffer();
+    printf("\n");
+    pressEnterToContinue();
 }
 
-void savetoFile() {
-    FILE *fp = fopen("students.txt", "w");
-    if (fp == NULL) { printf("Error: could not open file.\n"); return; }
+// Sorts by full ID ascending, grouped by ID year
+void sortbyID(Registry *reg) {
+    for (int i = 0; i < reg->student_count - 1; i++) {
+        for (int j = 0; j < reg->student_count - i - 1; j++) {
+            Record *a = &reg->student_list[j];
+            Record *b = &reg->student_list[j + 1];
 
-    // Walk through the array using a pointer instead of indexing each time
-    Record *ptr = student_list;
-    for (int i = 0; i < student_count; i++, ptr++) {
-        // Pipe-delimited format so fscanf can reliably split fields on load
-        fprintf(fp, "%s|%s|%.2f|%d|%d|%s|%s|%s\n",
-                ptr->id, ptr->name, ptr->gwa, ptr->is_inc,
-                ptr->year_level, ptr->block, ptr->contact_number, ptr->email);
+            int id_cmp   = strcmp(a->id, b->id);
+            int name_cmp = strcmp(a->name.lastName, b->name.lastName);
+            if (id_cmp > 0 || (id_cmp == 0 && name_cmp > 0)) {
+                Record temp = *a;
+                *a = *b;
+                *b = temp;
+            }
+        }
     }
-    fclose(fp);
-  
+
+    printf("\n-------SORT BY ID-------\n");
+    printf("Students sorted by ID (ascending), grouped by batch year.\n\n");
+
+    int current_year = -1;
+    for (int i = 0; i < reg->student_count; i++) {
+        Record *p = &reg->student_list[i];
+        int y = getIDYear(p->id);
+
+        if (y != current_year) {
+            current_year = y;
+            printf("\n  [ Batch %d ]\n", current_year);
+            // FIX: widened first name column to 30 chars
+            printf("  %-20s %-30s %-20s %-20s %-6s %-8s\n",
+                   "ID", "First Name", "Middle Name", "Last Name", "GWA", "Block");
+            printf("  %-20s %-30s %-20s %-20s %-6s %-8s\n",
+                   "--------------------", "------------------------------",
+                   "--------------------", "--------------------",
+                   "------", "--------");
+        }
+
+        if (p->is_inc)
+            printf("  %-20s %-30s %-20s %-20s %-6s %-8s\n",
+                   p->id,
+                   p->name.firstName, p->name.middleName, p->name.lastName,
+                   "INC", p->block);
+        else
+            printf("  %-20s %-30s %-20s %-20s %-6.2f %-8s\n",
+                   p->id,
+                   p->name.firstName, p->name.middleName, p->name.lastName,
+                   p->gwa, p->block);
+    }
+    printf("\n");
+    pressEnterToContinue();
 }
 
-void loadfromFile() {
-    FILE *fp = fopen("students.txt", "r");
-    if (fp == NULL) return; // file just doesn't exist yet on first run, that's normal
-    
-    // [^|] reads up to the next pipe, [^\n] reads to end of line.
-    // fscanf returns the number of fields it matched, so checking for 8 confirms a full row was read
-    while (student_count < MAX_STUDENTS &&
-           fscanf(fp, "%19[^|]|%49[^|]|%f|%d|%d|%49[^|]|%15[^|]|%99[^\n]\n",
-                   student_list[student_count].id,
-                   student_list[student_count].name,
-                  &student_list[student_count].gwa,
-                  &student_list[student_count].is_inc,
-                  &student_list[student_count].year_level,
-                   student_list[student_count].block,
-                   student_list[student_count].contact_number,
-                   student_list[student_count].email) == 8) {
-        student_count++;
-    }
-    fclose(fp);
-   
-}
+// Clears leftover characters in input buffer
 void clearInputBuffer() {
     int c;
     while ((c = getchar()) != '\n' && c != EOF);
-} // clears input to avoid duplicating the menu when entering a student
-// Mirrors the official BU grading scale. The ranges follow the school's actual rubric,
-// not something we made up
-const char* getGradeInterpretation(float gwa) {
-    if      (gwa >= 1.0f && gwa <= 1.4f) return "Outstanding";
-    else if (gwa >= 1.5f && gwa <= 1.9f) return "Superior";
-    else if (gwa >= 2.0f && gwa <= 2.5f) return "Very Satisfactory";
-    else if (gwa >= 2.6f && gwa <= 2.8f) return "Satisfactory";
-    else if (gwa >= 2.9f && gwa <= 3.0f) return "Fair / Passing";
-    else if (gwa >= 3.1f && gwa <= 4.0f) return "Conditional";
-    else if (gwa >  4.0f && gwa <  5.0f) return "Conditional / Failing";
-    else if (gwa == 5.0f)                return "Failure";
-    else                                 return "Invalid";
+}
+
+// validates name input and auto-fixes casing using fixNameCase
+void getValidName(const char *prompt, char *dest, int size, int allowEmpty) {
+    int valid;
+    do {
+        valid = 1;
+        printf("%s", prompt);
+        fgets(dest, size, stdin);
+        dest[strcspn(dest, "\n")] = '\0';
+
+        if (strlen(dest) == 0 && !allowEmpty) {
+            valid = 0;
+            printf("  [!] This field cannot be empty.\n");
+            continue;
+        }
+
+        if (strlen(dest) == 0 && allowEmpty)
+            return;
+
+        for (int i = 0; dest[i] != '\0'; i++) {
+            if (dest[i] >= '0' && dest[i] <= '9') {
+                valid = 0;
+                printf("  [!] Invalid name. Names cannot contain numbers.\n");
+                break;
+            }
+        }
+
+        if (valid)
+            fixNameCase(dest);
+
+    } while (!valid);
+}
+// updated fix where the program checks if there is an exact duplicate 
+int isDuplicateName(Registry *reg, const char *firstName, const char *middleName, const char *lastName) {
+    for (int i = 0; i < reg->student_count; i++) {
+        Record *s = &reg->student_list[i];
+
+        int firstMatch  = strcmp(s->name.firstName,  firstName)  == 0;
+        int middleMatch = strcmp(s->name.middleName, middleName) == 0;
+        int lastMatch   = strcmp(s->name.lastName,   lastName)   == 0;
+
+        if (firstMatch && middleMatch && lastMatch)
+            return 1;   // duplicate found
+    }
+    return 0;   // no duplicate
+}
+// validates block input and auto-fixes to uppercase using fixUpperCase
+void getValidBlock(const char *prompt, char *dest, int size) {
+    int valid;
+    do {
+        valid = 1;
+        printf("%s", prompt);
+        fgets(dest, size, stdin);
+        dest[strcspn(dest, "\n")] = '\0';
+
+        if (strlen(dest) == 0) {
+            valid = 0;
+            printf("  [!] Block cannot be empty.\n");
+            continue;
+        }
+
+        for (int i = 0; dest[i] != '\0'; i++) {
+            if ((dest[i] < 'A' || dest[i] > 'Z') && (dest[i] < 'a' || dest[i] > 'z')) {
+                valid = 0;
+                printf("  [!] Invalid block. Only letters allowed.\n");
+                break;
+            }
+        }
+
+        if (valid)
+            fixUpperCase(dest);
+
+    } while (!valid);
+}
+
+void getValidContact(const char *prompt, char *dest, int size) {
+    int valid;
+    do {
+        valid = 1;
+        printf("%s", prompt);
+        fgets(dest, size, stdin);
+        dest[strcspn(dest, "\n")] = '\0';
+
+        if (strlen(dest) == 0) {
+            valid = 0;
+            printf("  [!] Contact number cannot be empty.\n");
+        } else if (strlen(dest) != 11) {
+            valid = 0;
+            printf("  [!] Contact number must be exactly 11 digits.\n");
+        }
+
+        for (int i = 0; dest[i] != '\0'; i++) {
+            if (dest[i] < '0' || dest[i] > '9') {
+                valid = 0;
+                printf("  [!] Invalid contact number. Only digits allowed.\n");
+                break;
+            }
+        }
+    } while (!valid);
 }
 
 void displayGradingScale() {
-    // Reference table so users don't have to guess what a 2.3 GWA actually means
     printf("\n-------BICOL UNIVERSITY GRADING SCALE-------\n");
     printf("%-12s %-26s %-22s\n", "GWA Range", "Percentage Equivalent", "Adjectival Interpretation");
     printf("%-12s %-26s %-22s\n", "------------", "--------------------------", "----------------------");
-    printf("%-12s %-26s %-22s\n", "1.0 - 1.4", "95% - 100%",    "Outstanding");
-    printf("%-12s %-26s %-22s\n", "1.5 - 1.9", "90% - 94%",     "Superior");
-    printf("%-12s %-26s %-22s\n", "2.0 - 2.5", "84% - 89%",     "Very Satisfactory");
-    printf("%-12s %-26s %-22s\n", "2.6 - 2.8", "78% - 83%",     "Satisfactory");
-    printf("%-12s %-26s %-22s\n", "2.9 - 3.0", "75% - 77%",     "Fair / Passing");
-    printf("%-12s %-26s %-22s\n", "3.1 - 4.0", "Below 75%",     "Conditional");
-    printf("%-12s %-26s %-22s\n", "5.0",        "Final Failing", "Failure");
-    printf("%-12s %-26s %-22s\n", "INC",        "N/A",           "Incomplete");
+    printf("%-12s %-26s %-22s\n", "1.0 - 1.4",  "95% - 100%",   "Outstanding");
+    printf("%-12s %-26s %-22s\n", "1.5 - 1.9",  "90% - 94%",    "Superior");
+    printf("%-12s %-26s %-22s\n", "2.0 - 2.5",  "84% - 89%",    "Very Satisfactory");
+    printf("%-12s %-26s %-22s\n", "2.6 - 2.8",  "78% - 83%",    "Satisfactory");
+    printf("%-12s %-26s %-22s\n", "2.9 - 3.0",  "75% - 77%",    "Fair / Passing");
+    printf("%-12s %-26s %-22s\n", "3.1 - 4.0",  "Below 75%",    "Conditional / INC");
+    printf("%-12s %-26s %-22s\n", "5.0",         "Final Failing","Failure");
+    printf("%-12s %-26s %-22s\n", "INC",         "N/A",          "Incomplete");
     printf("\n");
+}
+
+// savetoFile includes inc_reason and or_number
+void savetoFile(Registry *reg) {
+    char path[512];
+    getDBPath(path, sizeof(path));
+    FILE *fp = fopen(path, "w");
+    if (fp == NULL) { printf("Error: could not open file.\n"); return; }
+
+    for (int i = 0; i < reg->student_count; i++) {
+        Record *p = &reg->student_list[i];
+        fprintf(fp, "%s|%s|%s|%s|%.2f|%d|%s|%s|%s|%s\n",
+                p->id,
+                p->name.firstName,
+                p->name.middleName,
+                p->name.lastName,
+                p->gwa,
+                p->is_inc,
+                p->block,
+                p->contact_number,
+                p->inc_reason,
+                p->or_number);
+    }
+    fclose(fp);
+}
+
+// Safely copies a token into dest, or empty string if token is NULL
+static void safeToken(char *dest, int destSize, char *token) {
+    if (token != NULL)
+        strncpy(dest, token, destSize - 1);
+    else
+        dest[0] = '\0';
+    dest[destSize - 1] = '\0';
+}
+
+// loadfromFile — uses fgets + manual pipe splitting so empty fields (e.g.
+// missing middle name stored as "||") are handled correctly.
+// fscanf's %[^|] requires at least one character and silently fails on "||",
+// which caused the entire database to stop loading whenever a student had
+// no middle name.
+void loadfromFile(Registry *reg) {
+    char path[512];
+    getDBPath(path, sizeof(path));
+    FILE *fp = fopen(path, "r");
+    if (fp == NULL) return;
+
+    reg->student_count = 0;
+    char line[512];
+
+    while (reg->student_count < MAX_STUDENTS && fgets(line, sizeof(line), fp) != NULL) {
+        // strip trailing newline
+        line[strcspn(line, "\n")] = '\0';
+        if (strlen(line) == 0) continue;
+
+        Record *s = &reg->student_list[reg->student_count];
+        s->inc_reason[0] = '\0';
+        s->or_number[0]  = '\0';
+
+        // Split on '|' — strtok collapses empty tokens, so we walk manually
+        // Fields: id|firstName|middleName|lastName|gwa|is_inc|block|contact|inc_reason|or_number
+        char *fields[10];
+        int   field_count = 0;
+        char *p = line;
+
+        while (field_count < 10) {
+            fields[field_count++] = p;
+            char *pipe = strchr(p, '|');
+            if (pipe == NULL) break;
+            *pipe = '\0';   // terminate this field
+            p = pipe + 1;   // advance past the '|'
+        }
+
+        // Need at least 8 fields to be a valid record
+        if (field_count < 8) continue;
+
+        safeToken(s->id,              sizeof(s->id),              fields[0]);
+        safeToken(s->name.firstName,  sizeof(s->name.firstName),  fields[1]);
+        safeToken(s->name.middleName, sizeof(s->name.middleName), fields[2]);
+        safeToken(s->name.lastName,   sizeof(s->name.lastName),   fields[3]);
+        s->gwa    = (field_count > 4) ? (float)atof(fields[4]) : 0.0f;
+        s->is_inc = (field_count > 5) ? atoi(fields[5])        : 0;
+        safeToken(s->block,           sizeof(s->block),           field_count > 6 ? fields[6] : NULL);
+        safeToken(s->contact_number,  sizeof(s->contact_number),  field_count > 7 ? fields[7] : NULL);
+        safeToken(s->inc_reason,      sizeof(s->inc_reason),      field_count > 8 ? fields[8] : NULL);
+        safeToken(s->or_number,       sizeof(s->or_number),       field_count > 9 ? fields[9] : NULL);
+
+        fixNameCase(s->name.firstName);
+        fixNameCase(s->name.middleName);
+        fixNameCase(s->name.lastName);
+        fixUpperCase(s->block);
+
+        reg->student_count++;
+    }
+    fclose(fp);
+}
+
+// Returns a description for GWA
+const char* getGradeInterpretation(float gwa) {
+    if (gwa >= 1.00f && gwa <= 1.49f)      return "Outstanding";
+    else if (gwa >= 1.50f && gwa <= 1.99f) return "Superior";
+    else if (gwa >= 2.00f && gwa <= 2.49f) return "Very Satisfactory";
+    else if (gwa >= 2.50f && gwa <= 2.99f) return "Satisfactory";
+    else if (gwa >= 3.00f && gwa <= 3.09f) return "Fair / Passing";
+    else if (gwa >= 3.10f && gwa <= 4.00f) return "Conditional";
+    else if (gwa >= 4.10f && gwa <= 5.00f) return "Failure";
+    else                                   return "Invalid";
+}
+
+// Waits for user to press Enter
+void pressEnterToContinue() {
+    printf("\nPress Enter to continue...");
+    getchar();
 }
