@@ -37,12 +37,12 @@ Choose option:
 
 On the choose option:
 
-Input 1 if you want to add a student on the database
-Input 2 if you want to view all records of student in the database
-Input 3 if you want to update an existing student's record in the database
-Input 4 if you want to sort records (either by GWA or by ID) 
-Input 5 to view the Bicol University Grading Scale
-Input 6 to exit the program
+- Input 1 if you want to add a student on the database
+- Input 2 if you want to view all records of student in the database
+- Input 3 if you want to update an existing student's record in the database
+- Input 4 if you want to sort records (either by GWA or by ID) 
+- Input 5 to view the Bicol University Grading Scale
+- Input 6 to exit the program
 
 
 
